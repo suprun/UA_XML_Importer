@@ -12,6 +12,61 @@ import sys
 import os
 from qgis.core import QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY, QgsProject, QgsApplication, QgsRectangle, QgsCoordinateTransform
 
+land_use_types = {
+  '001.00': 'Рілля',
+  '001.01': 'Рілля',
+  '001.02': 'Перелоги',
+  '001.03': 'Парники, оранжереї, теплиці',
+  '002.00': 'Рослинний покрив земель і ґрунти',
+  '002.01': 'Сіножаті',
+  '002.02': 'Пасовища',
+  '002.03': 'Багаторічні насадження',
+  '003.00': 'Землі без рослинного покриву або з незначним рослинним покривом, або ав’янистим рослинним покривом природного походження',
+  '003.01': "Кам'янисті місця",
+  '003.02': 'Піски',
+  '003.03': 'Болота',
+  '003.04': 'Солончаки',
+  '003.05': 'Яри',
+  '003.06': 'Степи',
+  '003.07': 'Луки',
+  '004.00': 'Чагарникова рослинність природного походження',
+  '005.00': 'Ліси та інші лісовкриті землі',
+  '005.01': 'Земельні лісові ділянки, вкриті лісовою рослинністю',
+  '005.02': 'Земельні лісові ділянки, не вкриті лісовою рослинністю',
+  '005.03': 'Лісові насадження лінійного типу',
+  '005.04': 'Інші лісовкриті площі',
+  '005.05': 'Самозалісені землі',
+  '006.00': 'Води',
+  '006.01': 'Природні водотоки (річки та струмки)',
+  '006.02': 'Штучні водотоки (канали, колектори, канави)',
+  '006.03': 'Озера, прибережні замкнуті водойми, лимани',
+  '006.04': 'Ставки',
+  '006.05': 'Штучні водосховища',
+  '007.00': 'Землі під житловою забудовою',
+  '007.01': 'Малоповерхова забудова',
+  '007.02': 'Багатоповерхова забудова',
+  '008.00': 'Землі під громадською забудовою',
+  '008.01': 'Землі під громадськими спорудами, які мають історико-архітектурну цінність',
+  '008.02': 'Вулиці та бульвари, набережні, площі',
+  '008.03': 'Землі під соціально-культурними об’єктами',
+  '009.00': 'Землі, які використовуються для транспорту',
+  '009.01': 'Землі під залізницями',
+  '009.02': 'Землі під дорогами',
+  '009.03': 'Землі під будівлями та спорудами транспорту',
+  '010.00': 'Землі технічної інфраструктури',
+  '011.00': 'Землі під промисловою забудовою',
+  '011.01': 'Землі під будівлями промислових підприємств',
+  '011.02': 'Землі під відкритими розробками, шахтами, кар’єрами',
+  '011.03': 'Забруднені промисловими та іншими відходами землі',
+  '012.00': 'Землі поточного будівництва',
+  '013.00': 'Землі під господарськими будівлями і дворами',
+  '014.00': 'Землі для відпочинку та оздоровлення',
+  '015.00': 'Землі спеціального призначення',
+  '015.01': 'Військові бази, фортеці',
+      '015.02': 'Кладовища, крематорії, меморіали',
+      '015.03': 'Меліоративне освоєння і відновлення родючості ґрунтів'
+  }
+
 class Importer:
     def __init__(self, iface):
         self.iface = iface
@@ -294,43 +349,57 @@ class Importer:
                     else:
                         if not os.path.basename(path) in err_dict['rest_err']: err_dict['rest_err'].append(os.path.basename(path))
                         _print('\t\tНе можу знайти геометрію обмеження. Обмеження не буде додано.')
-#угіддя------------------------------------------------
-                _print('Перевіряю угіддя...')
-                for part in root.findall("./InfoPart/CadastralZoneInfo/CadastralQuarters/CadastralQuarterInfo/Parcels/ParcelInfo/LandsParcel/LandParcelInfo"): 
-                    try:
-                        code=part.find('./LandCode').text
-                    except AttributeError:
-                        code='*код не роспізнано*'                        
-                    try:
-                        size=part.find('./MetricInfo/Area/Size').text
-                    except AttributeError:
-                        rest_name='*площу не визначено*'                        
-                    try:
-                        size=size+' '+part.find('./MetricInfo/Area/MeasurementUnit').text
-                    except AttributeError:
-                        size=size+' ?'
-                    _print(f"\tРозглядаємо угіддя {code}...")
-                    
-                    feature = QgsFeature()
-                    feature.initAttributes(3)
-                    feature.setAttribute(0,os.path.basename(path))
-                    feature.setAttribute(1,"Угіддя")
-                    feature.setAttribute(2,code+"; "+size)
-                    geom=get_geometry(part.findall("./MetricInfo/Externals"))
-                    if geom:
-                        if geom.isGeosValid():
-                            _print('\t\tГеометрія угіддя пройшла валідацію.')
+# угіддя ------------------------------------------------
+                    _print('Перевіряю угіддя...')
+                    for part in root.findall("./InfoPart/CadastralZoneInfo/CadastralQuarters/CadastralQuarterInfo/Parcels/ParcelInfo/LandsParcel/LandParcelInfo"):
+                        try:
+                            code = part.find('./LandCode').text
+                        except AttributeError:
+                            code = '*код не розпізнано*'
+                            _print("\tКод угіддя не знайдено")
+
+                        land_name = land_use_types.get(code.strip(), '*невідоме угіддя*')
+
+                        try:
+                            size = part.find('./MetricInfo/Area/Size').text
+                        except AttributeError:
+                            size = '*площу не визначено*'
+                        try:
+                            size = size + ' ' + part.find('./MetricInfo/Area/MeasurementUnit').text
+                        except AttributeError:
+                            size = size + ' ?'
+
+                        _print(f"\tРозглядаємо угіддя {code} ({land_name})...")
+
+                        feature = QgsFeature()
+                        feature.initAttributes(4)
+                        feature.setAttribute(0, os.path.basename(path))
+                        feature.setAttribute(1, land_name)
+                        feature.setAttribute(2, code)
+                        feature.setAttribute(3, size)
+
+                        geom = get_geometry(part.findall("./MetricInfo/Externals"))
+                        if geom:
+                            if geom.isGeosValid():
+                                _print('\t\tГеометрія угіддя пройшла валідацію.')
+                            else:
+                                if os.path.basename(path) not in err_dict['other_inv']:
+                                    err_dict['other_inv'].append(os.path.basename(path))
+                                _print('\t\tГеометрія угіддя не пройшла валідацію.')
+
+                            feature.setGeometry(geom)
+                            if crs not in crs_layers:
+                                crs_layers[crs] = {}
+                            if 'Others' not in crs_layers[crs]:
+                                crs_layers[crs]['Others'] = []
+                            crs_layers[crs]['Others'].append(feature)
+                            if os.path.basename(path) not in finished_arr:
+                                finished_arr.append(os.path.basename(path))
                         else:
-                            if not os.path.basename(path) in err_dict['other_inv']: err_dict['other_inv'].append(os.path.basename(path))
-                            _print('\t\tГеометрія угіддя не пройшла валідацію, перевірьте правильність імпортованої геометрії.')                            
-                        feature.setGeometry(geom)
-                        if not crs in crs_layers: crs_layers[crs]={}
-                        if not 'Others' in crs_layers[crs]: crs_layers[crs]['Others']=[]
-                        crs_layers[crs]['Others'].append(feature)
-                        if not os.path.basename(path)in finished_arr: finished_arr.append(os.path.basename(path))
-                    else:
-                        if not os.path.basename(path) in err_dict['other_err']: err_dict['other_err'].append(os.path.basename(path))
-                        _print('\t\tНе можу знайти геометрію Угіддя. Угіддя не буде додано.')
+                            if os.path.basename(path) not in err_dict['other_err']:
+                                err_dict['other_err'].append(os.path.basename(path))
+                            _print('\t\tНе можу знайти геометрію Угіддя. Угіддя не буде додано.')
+
 
 #Тер зони------------------------------------------------
                 ter_zones={
@@ -420,7 +489,7 @@ class Importer:
                 print("\t\tОб'єкти обмежень відсутні.")
 
             if 'Others' in crs_layers[crs]:
-                layer = QgsVectorLayer(f'Polygon?{epsg}field=File_name:string&field=Layer:string&field=Description:string', 'XML_others' , "memory")
+                layer = QgsVectorLayer(f'Polygon?{epsg}field=File_name:string&field=LandName:string&field=LandCode:string&field=Area:string', 'XML_landuses' , "memory")
                 for feature in crs_layers[crs]['Others']:
                     layer.dataProvider().addFeature(feature)
                 if layer.featureCount()!=0:
